@@ -1,0 +1,2 @@
+[console_scripts]
+server = data_janitor.server.app:main
