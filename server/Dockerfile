@@ -1,80 +1,52 @@
-# Copyright (c) Meta Platforms, Inc. and affiliates.
-# All rights reserved.
-#
-# This source code is licensed under the BSD-style license found in the
-# LICENSE file in the root directory of this source tree.
-
-# Multi-stage build using openenv-base
-# This Dockerfile is flexible and works for both:
-# - In-repo environments (with local OpenEnv sources)
-# - Standalone environments (with openenv from PyPI/Git)
-# The build script (openenv build) handles context detection and sets appropriate build args.
-
+# 1. Use the official OpenEnv base image
 ARG BASE_IMAGE=ghcr.io/meta-pytorch/openenv-base:latest
 FROM ${BASE_IMAGE} AS builder
 
+# 2. Set the working directory to /app
 WORKDIR /app
 
-# Ensure git is available (required for installing dependencies from VCS)
+# 3. Install git (required for some python dependencies)
 RUN apt-get update && \
     apt-get install -y --no-install-recommends git && \
     rm -rf /var/lib/apt/lists/*
 
-# Build argument to control whether we're building standalone or in-repo
-ARG BUILD_MODE=in-repo
-ARG ENV_NAME=data_janitor
+# 4. Install uv (as used in your pyproject.toml)
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh && \
+    mv /root/.local/bin/uv /usr/local/bin/uv && \
+    mv /root/.local/bin/uvx /usr/local/bin/uvx
 
-# Copy environment code (always at root of build context)
-COPY . /app/env
+# 5. Copy dependency files first to leverage Docker layer caching
+COPY pyproject.toml .
+# Note: Uncomment the line below if you have a uv.lock file in your root
+# COPY uv.lock . 
 
-# For in-repo builds, openenv is already vendored in the build context
-# For standalone builds, openenv will be installed via pyproject.toml
-WORKDIR /app/env
+# 6. Install dependencies defined in pyproject.toml
+RUN uv sync --no-install-project --no-editable
 
-# Ensure uv is available (for local builds where base image lacks it)
-RUN if ! command -v uv >/dev/null 2>&1; then \
-        curl -LsSf https://astral.sh/uv/install.sh | sh && \
-        mv /root/.local/bin/uv /usr/local/bin/uv && \
-        mv /root/.local/bin/uvx /usr/local/bin/uvx; \
-    fi
-    
-# Install dependencies using uv sync
-# If uv.lock exists, use it; otherwise resolve on the fly
-RUN --mount=type=cache,target=/root/.cache/uv \
-    if [ -f uv.lock ]; then \
-        uv sync --frozen --no-install-project --no-editable; \
-    else \
-        uv sync --no-install-project --no-editable; \
-    fi
+# 7. Copy the ENTIRE project into the container
+# This includes /data, /server, models.py, and openenv.yaml
+COPY . .
 
-RUN --mount=type=cache,target=/root/.cache/uv \
-    if [ -f uv.lock ]; then \
-        uv sync --frozen --no-editable; \
-    else \
-        uv sync --no-editable; \
-    fi
+# 8. Install the project itself
+RUN uv sync --no-editable
 
-# Final runtime stage
+# --- Final Runtime Stage ---
 FROM ${BASE_IMAGE}
 
 WORKDIR /app
 
-# Copy the virtual environment from builder
-COPY --from=builder /app/env/.venv /app/.venv
+# 9. Copy the virtual environment and all project files from the builder
+COPY --from=builder /app/.venv /app/.venv
+COPY --from=builder /app /app
 
-# Copy the environment code
-COPY --from=builder /app/env /app/env
-
-# Set PATH to use the virtual environment
+# 10. Set environment variables so the app and imports work
 ENV PATH="/app/.venv/bin:$PATH"
+ENV PYTHONPATH="/app"
 
-# Set PYTHONPATH so imports work correctly
-ENV PYTHONPATH="/app/env:$PYTHONPATH"
-
-# Health check
+# 11. Health check for the FastAPI server
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:8000/health || exit 1
 
-# Run the FastAPI server
-# The module path is constructed to work with the /app/env structure
-CMD ["sh", "-c", "cd /app/env && uvicorn server.app:app --host 0.0.0.0 --port 8000"]
+# 12. Start the FastAPI server using the entry point from openenv.yaml
+# We run from /app so the 'data/' folder is reachable at './data/'
+CMD ["uvicorn", "server.app:app", "--host", "0.0.0.0", "--port", "8000"]
