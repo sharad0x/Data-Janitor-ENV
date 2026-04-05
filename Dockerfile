@@ -5,7 +5,7 @@ FROM ${BASE_IMAGE} AS builder
 # 2. Set the working directory inside the container
 WORKDIR /app
 
-# 3. Install system dependencies
+# 3. Install system dependencies (git/curl are needed for uv/pip)
 RUN apt-get update && \
     apt-get install -y --no-install-recommends git curl && \
     rm -rf /var/lib/apt/lists/*
@@ -16,9 +16,8 @@ RUN curl -LsSf https://astral.sh/uv/install.sh | sh && \
     mv /root/.local/bin/uvx /usr/local/bin/uvx
 
 # 5. Copy dependency files from the ROOT
-# Since we build from root, these are in the current directory
+# Since the Dockerfile is now in the root, pyproject.toml is at the same level
 COPY pyproject.toml .
-# COPY uv.lock .  <-- Uncomment if you have a lockfile
 
 # 6. Install dependencies defined in pyproject.toml
 RUN uv sync --no-install-project --no-editable
@@ -27,7 +26,7 @@ RUN uv sync --no-install-project --no-editable
 # This picks up /data, models.py, openenv.yaml, and the /server folder
 COPY . .
 
-# 8. Finalize the uv installation
+# 8. Finalize the uv installation to include the project itself
 RUN uv sync --no-editable
 
 # --- Final Runtime Stage ---
@@ -38,11 +37,11 @@ WORKDIR /app
 COPY --from=builder /app/.venv /app/.venv
 COPY --from=builder /app /app
 
-# 10. Set paths so your code and models.py are importable
+# 10. Set paths so your code and models.py are correctly importable
 ENV PATH="/app/.venv/bin:$PATH"
 ENV PYTHONPATH="/app"
 
-# 11. Health check
+# 11. Health check (matches the port in openenv.yaml)
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:8000/health || exit 1
 
