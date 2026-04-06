@@ -1,5 +1,6 @@
+import json
 from typing import Dict, Literal, Optional, Union
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from openenv.core import Action, Observation
 from openenv.core.env_server.types import State
 
@@ -73,6 +74,18 @@ class DataJanitorAction(Action):
         ReduceDimensionsAction,
         SubmitDatasetAction
     ] = Field(..., description="The data engineering action to perform.")
+
+    @model_validator(mode='before')
+    @classmethod
+    def fix_web_ui_string(cls, data):
+        # Intercept stringified input from the Web UI text box
+        if isinstance(data, dict) and isinstance(data.get('command'), str):
+            try:
+                # Convert the literal string back into a Python dictionary
+                data['command'] = json.loads(data['command'])
+            except json.JSONDecodeError:
+                pass # Let standard validation catch invalid JSON
+        return data
 
 # ==========================================
 # 2. THE OBSERVATION SPACE
