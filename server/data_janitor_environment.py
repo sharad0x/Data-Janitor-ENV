@@ -8,16 +8,16 @@ from openenv.core.env_server.interfaces import Environment
 try:
     from ..models import (
         DataJanitorAction, DataJanitorObservation, DataJanitorState,
-        DropColumnAction, FillMissingAction, ChangeDataTypeAction, 
-        HandleOutliersAction, TransformDistributionAction, EncodeCategoricalAction, 
-        ScaleFeatureAction, ReduceDimensionsAction, SubmitDatasetAction, FeatureEngineeringAction
+        DropColumnAction, FillMissingAction, HandleOutliersAction, 
+        TransformDistributionAction, EncodeCategoricalAction, 
+        ScaleFeatureAction, SubmitDatasetAction
     )
 except ImportError:
     from models import (
         DataJanitorAction, DataJanitorObservation, DataJanitorState,
-        DropColumnAction, FillMissingAction, ChangeDataTypeAction, 
-        HandleOutliersAction, TransformDistributionAction, EncodeCategoricalAction, 
-        ScaleFeatureAction, ReduceDimensionsAction, SubmitDatasetAction, FeatureEngineeringAction
+        DropColumnAction, FillMissingAction, HandleOutliersAction, 
+        TransformDistributionAction, EncodeCategoricalAction, 
+        ScaleFeatureAction, SubmitDatasetAction
     )
 
 class DataJanitorEnvironment(Environment):
@@ -33,7 +33,15 @@ class DataJanitorEnvironment(Environment):
         # Internal state
         self.episode_id = ""
         self.current_step = 0
-        self.max_steps = kwargs.get("max_steps", 20) 
+        
+        # FIX: Dynamically set max_steps based on the task difficulty
+        if self.difficulty == "easy":
+            self.max_steps = 20
+        elif self.difficulty == "medium":
+            self.max_steps = 30
+        else:
+            self.max_steps = 40
+            
         self.action_history = []
         self.last_feedback = "Initialized."
         self.final_score = 0.0
@@ -170,6 +178,21 @@ class DataJanitorEnvironment(Environment):
                 else:
                     self.last_feedback = "Error: Column must be numeric."
 
+            elif isinstance(cmd, TransformDistributionAction):
+                col = cmd.column_name
+                if col in self.train_df.select_dtypes(include=[np.number]).columns:
+                    step_reward += 0.05
+                    # Clip lower bounds at 0 to prevent math errors on negative numbers
+                    if cmd.strategy == "log1p":
+                        self.train_df[col] = np.log1p(self.train_df[col].clip(lower=0))
+                        self.test_df[col] = np.log1p(self.test_df[col].clip(lower=0))
+                    elif cmd.strategy == "sqrt":
+                        self.train_df[col] = np.sqrt(self.train_df[col].clip(lower=0))
+                        self.test_df[col] = np.sqrt(self.test_df[col].clip(lower=0))
+                    self.last_feedback = f"Transformed '{col}' using {cmd.strategy}."
+                else:
+                    self.last_feedback = "Error: Column must be numeric."
+
             elif isinstance(cmd, ScaleFeatureAction):
                 col = cmd.column_name
                 if col in self.train_df.select_dtypes(include=[np.number]).columns:
@@ -191,9 +214,19 @@ class DataJanitorEnvironment(Environment):
                 if col in self.train_df.columns:
                     step_reward += 0.10
                     if cmd.strategy == "one_hot":
-                        combined = pd.concat([self.train_df, self.test_df], keys=[0,1])
-                        combined = pd.get_dummies(combined, columns=[col], drop_first=True)
-                        self.train_df, self.test_df = combined.xs(0), combined.xs(1)
+                        from sklearn.preprocessing import OneHotEncoder
+                        # handle_unknown='ignore' prevents crashes on unseen test data
+                        enc = OneHotEncoder(handle_unknown='ignore', sparse_output=False)
+                        
+                        # Fit on Train only
+                        train_encoded = enc.fit_transform(self.train_df[[col]].astype(str))
+                        train_encoded_df = pd.DataFrame(train_encoded, columns=enc.get_feature_names_out([col]), index=self.train_df.index)
+                        self.train_df = pd.concat([self.train_df.drop(columns=[col]), train_encoded_df], axis=1)
+                        
+                        # Transform Test
+                        test_encoded = enc.transform(self.test_df[[col]].astype(str))
+                        test_encoded_df = pd.DataFrame(test_encoded, columns=enc.get_feature_names_out([col]), index=self.test_df.index)
+                        self.test_df = pd.concat([self.test_df.drop(columns=[col]), test_encoded_df], axis=1)
                     else:
                         from sklearn.preprocessing import OrdinalEncoder
                         enc = OrdinalEncoder(handle_unknown='use_encoded_value', unknown_value=-1)

@@ -1,13 +1,11 @@
 README.md
 __init__.py
 client.py
-eval_all.py
 inference.py
 models.py
 pyproject.toml
 ./__init__.py
 ./client.py
-./eval_all.py
 ./inference.py
 ./models.py
 openenv_data_janitor.egg-info/PKG-INFO

@@ -18,11 +18,6 @@ class FillMissingAction(BaseModel):
     strategy: Literal["mean", "median", "mode", "constant", "forward_fill", "backward_fill"] = Field(...)
     constant_value: Optional[str] = Field(default=None)
 
-class ChangeDataTypeAction(BaseModel):
-    action_type: Literal["change_dtype"] = "change_dtype"
-    column_name: str = Field(..., description="The name of the column to modify.")
-    new_type: Literal["int64", "float64", "datetime64[ns]", "object", "bool"] = Field(...)
-
 class HandleOutliersAction(BaseModel):
     action_type: Literal["handle_outliers"] = "handle_outliers"
     column_name: str = Field(..., description="The numerical column to check for outliers.")
@@ -30,13 +25,6 @@ class HandleOutliersAction(BaseModel):
     lower_percentile: float = Field(0.01, ge=0.0, le=0.49, description="Lower clip bound (for clip_percentile)")
     upper_percentile: float = Field(0.99, ge=0.51, le=1.0, description="Upper clip bound (for clip_percentile)")
     zscore_threshold: float = Field(3.0, ge=1.0, le=5.0, description="Z-score cutoff (for drop_zscore)")
-
-class FeatureEngineeringAction(BaseModel):
-    action_type: Literal["feature_engineering"] = "feature_engineering"
-    column_a: str = Field(..., description="First numerical column.")
-    column_b: str = Field(..., description="Second numerical column.")
-    operation: Literal["add", "subtract", "multiply", "divide"] = Field(...)
-    new_column_name: str = Field(..., description="Name for the newly created feature.")
 
 class TransformDistributionAction(BaseModel):
     action_type: Literal["transform_distribution"] = "transform_distribution"
@@ -53,10 +41,6 @@ class ScaleFeatureAction(BaseModel):
     column_name: str = Field(..., description="The numerical column to scale.")
     strategy: Literal["standard", "minmax", "robust"] = Field(...)
 
-class ReduceDimensionsAction(BaseModel):
-    action_type: Literal["reduce_dimensions"] = "reduce_dimensions"
-    strategy: Literal["pca", "drop_collinear"] = Field(...)
-
 class SubmitDatasetAction(BaseModel):
     action_type: Literal["submit"] = "submit"
     notes: str = Field(..., description="Summary of the transformations applied.")
@@ -65,26 +49,21 @@ class DataJanitorAction(Action):
     command: Union[
         DropColumnAction, 
         FillMissingAction, 
-        ChangeDataTypeAction,
         HandleOutliersAction,
         TransformDistributionAction,
         EncodeCategoricalAction,
         ScaleFeatureAction,
-        FeatureEngineeringAction,
-        ReduceDimensionsAction,
         SubmitDatasetAction
     ] = Field(..., description="The data engineering action to perform.")
 
     @model_validator(mode='before')
     @classmethod
     def fix_web_ui_string(cls, data):
-        # Intercept stringified input from the Web UI text box
         if isinstance(data, dict) and isinstance(data.get('command'), str):
             try:
-                # Convert the literal string back into a Python dictionary
                 data['command'] = json.loads(data['command'])
             except json.JSONDecodeError:
-                pass # Let standard validation catch invalid JSON
+                pass 
         return data
 
 # ==========================================

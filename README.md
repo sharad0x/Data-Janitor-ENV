@@ -57,6 +57,21 @@ export HF_TOKEN="your_hugging_face_token"
 python inference.py
 ```
 
+---
+
+## 📈 Baseline Agent Scores
+The included `inference.py` script uses the OpenAI client to run a **meta/llama-3.1-70b-instruct agent (via NVIDIA NIM)** against the environment. Due to the strict "Zero NaN" evaluation policy, agents must successfully impute or drop all problematic columns before the final step.
+
+| Task Difficulty | Kaggle Dataset | Max Steps | Expected Baseline Score (F1) |
+| :--- | :--- | :--- | :--- |
+| **Easy** | Credit Card Fraud | 20 | ~0.94 |
+| **Medium** | Stroke Risk | 30 | ~0.58 |
+| **Hard** | Spaceship Titanic | 40 | ~0.74 |
+
+*(Note: If the agent fails to clean all NaNs within the step limit, the environment strictly returns a `0.0` score to enforce data pipeline integrity).*
+
+---
+
 ## 📊 Evaluation Logic
 The environment uses a Random Forest Classifier with a macro-F1 score metric.
 Note: A strict "Zero NaN" policy is enforced—any dataset submitted with remaining missing values results in a score of 0.0 to ensure total data integrity.

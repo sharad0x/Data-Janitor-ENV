@@ -22,7 +22,7 @@ IMAGE_NAME = os.getenv("LOCAL_IMAGE_NAME") or os.getenv("IMAGE_NAME")
 # Task Config
 TASK_NAME = os.getenv("TASK_NAME", "hard")
 BENCHMARK = os.getenv("BENCHMARK", "data_janitor")
-MAX_STEPS = 20
+MAX_STEPS = 40
 SUCCESS_SCORE_THRESHOLD = 0.85 
 
 # ==========================================
@@ -35,17 +35,16 @@ SYSTEM_PROMPT = textwrap.dedent("""
     HEURISTICS & ALLOWED STRATEGIES:
     1. MISSING DATA: 'fill_missing' (strategies: 'mean', 'median', 'mode', 'constant').
     2. SKEWNESS: 'transform_distribution' (strategies: 'log1p', 'sqrt' ONLY. Never use 'log').
-    3. OUTLIERS: 'handle_outliers' (strategies: 'clip_percentile', 'drop_zscore'). DO NOT use on binary (0/1) columns.
+    3. OUTLIERS: 'handle_outliers' (strategies: 'clip_percentile', 'drop_zscore'). NEVER use on binary (0/1) columns like 'hypertension' or 'heart_disease'.
     4. ENCODING: 'encode_categorical' (strategies: 'one_hot', 'ordinal', 'target_encode').
     5. SCALING: 'scale_feature' (strategies: 'standard', 'minmax', 'robust').
     6. NEVER alter the target column.
-    7. DO NOT repeat the exact same action on the exact same column if it is not changing the observation.
+    7. FATAL ERROR: DO NOT repeat an action on the same column. If you just applied an action to a column, YOU MUST pick a different column or a different action next.
     8. JUNK/IDs: You MUST use 'drop_column' on any high-cardinality string identifiers (like Names, IDs, or raw text) before submitting.
     
-    You must output EXACTLY ONE JSON object matching one of these structures. Do not include markdown:
+    You must output EXACTLY ONE JSON object matching one of these structures. Output raw JSON only. Do not include markdown formatting or ```json blocks:
     {"command": {"action_type": "drop_column", "column_name": "..."}}
     {"command": {"action_type": "fill_missing", "column_name": "...", "strategy": "median", "constant_value": "..."}} 
-    {"command": {"action_type": "change_dtype", "column_name": "...", "new_type": "..."}}
     {"command": {"action_type": "handle_outliers", "column_name": "...", "strategy": "clip_percentile", "lower_percentile": 0.05, "upper_percentile": 0.95}} 
     {"command": {"action_type": "transform_distribution", "column_name": "...", "strategy": "log1p"}} 
     {"command": {"action_type": "encode_categorical", "column_name": "...", "strategy": "one_hot"}} 
@@ -141,7 +140,7 @@ async def main() -> None:
             obs_str = result.observation.model_dump_json(indent=2)
             
             # API Request
-            agent_reply = get_model_message(client, obs_str)
+            agent_reply = await asyncio.to_thread(get_model_message, client, obs_str)
             error_msg = None
             
             # Baseline delay to prevent immediate rate limit trips
