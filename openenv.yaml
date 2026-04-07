@@ -9,7 +9,7 @@ env_metadata:
   name: "data-janitor-env"
   description: "A Reinforcement Learning environment for autonomous data engineering. Agents must repair messy datasets (typing, imputation, and ML-readiness) to maximize downstream ML metrics without data leakage."
   version: "1.0.0"
-  author: "Data Janitor Team"
+  author: "Sharad Garg"
 
 tasks:
   - id: easy
@@ -17,15 +17,21 @@ tasks:
     description: "An unbalanced dataset of financial transactions. The agent must scale skewed numerical features and drop unhelpful identifiers to predict fraudulent activity."
     difficulty: easy
     max_steps: 20
+    grader:
+]      success_threshold: 0.85
 
   - id: medium
     name: "Stroke Risk Assessment"
     description: "A mixed-type electronic health record dataset. The agent must handle hidden string-based missing values ('N/A') and encode categorical variables to predict stroke risk."
     difficulty: medium
     max_steps: 30
+    grader:
+      success_threshold: 0.85
 
   - id: hard
     name: "Corrupted Passenger Manifest (Spaceship Titanic)"
     description: "A heavily degraded sci-fi dataset with extreme missingness, boolean traps, and high-cardinality string identifiers. The agent must rigorously impute, encode, and prune to build a working prediction pipeline without leaking data."
     difficulty: hard
     max_steps: 40
+    grader:
+      success_threshold: 0.85
