@@ -1,6 +1,6 @@
 def grade(trajectory, **kwargs) -> float:
     """
-    OpenEnv programmatic grader for Data Janitor.
+    OpenEnv programmatic grader for Data Janitor - EASY task.
     Extracts the final_score from the final observation in the trajectory.
     """
     if not trajectory:

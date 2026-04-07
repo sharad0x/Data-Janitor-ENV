@@ -18,8 +18,8 @@ tasks:
     difficulty: easy
     max_steps: 20
     evaluator:
-      type: custom
-      script: grader.py
+      type: programmatic
+      script: grader_easy.py
       success_threshold: 0.85
 
   - id: medium
@@ -28,8 +28,8 @@ tasks:
     difficulty: medium
     max_steps: 30
     evaluator:
-      type: custom
-      script: grader.py
+      type: programmatic
+      script: grader_medium.py
       success_threshold: 0.85
 
   - id: hard
@@ -38,6 +38,6 @@ tasks:
     difficulty: hard
     max_steps: 40
     evaluator:
-      type: custom
-      script: grader.py
+      type: programmatic
+      script: grader_hard.py
       success_threshold: 0.85
