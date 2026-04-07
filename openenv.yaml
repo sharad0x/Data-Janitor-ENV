@@ -18,8 +18,8 @@ tasks:
     difficulty: easy
     max_steps: 20
     grader:
-      type: "reward"
-      success_threshold: 0.85
+      type: programmatic
+      script: grader.py
 
   - id: medium
     name: "Stroke Risk Assessment"
@@ -27,8 +27,8 @@ tasks:
     difficulty: medium
     max_steps: 30
     grader:
-      type: "reward"
-      success_threshold: 0.85
+      type: programmatic
+      script: grader.py
 
   - id: hard
     name: "Corrupted Passenger Manifest (Spaceship Titanic)"
@@ -36,5 +36,5 @@ tasks:
     difficulty: hard
     max_steps: 40
     grader:
-      type: "reward"
-      success_threshold: 0.85
+      type: programmatic
+      script: grader.py
