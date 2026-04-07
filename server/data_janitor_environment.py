@@ -240,12 +240,17 @@ class DataJanitorEnvironment(Environment):
             self.last_feedback = f"Execution Error: {str(e)}"
             step_reward -= 0.10 # Explicit penalty for crashing the physics engine
 
-        # TERMINATION
-        total_reward = step_reward
+        # ==========================================
+        # STRICT HACKATHON GRADING (0.0 to 1.0)
+        # ==========================================
+        # The evaluator requires the total episode reward to fall strictly
+        # between 0.0 and 1.0. We must discard all intermediate step_rewards.
+        total_reward = 0.0 
+        
         if is_manual_submit or self.current_step >= self.max_steps:
             done = True
             self.final_score = self._evaluate_final_pipeline()
-            total_reward += self.final_score # ML score is added as terminal reward
+            total_reward = float(self.final_score) # Only the terminal ML score matters
 
         return self._generate_observation(total_reward, done)
 

@@ -18,6 +18,7 @@ tasks:
     difficulty: easy
     max_steps: 20
     grader:
+      type: "reward"
       success_threshold: 0.85
 
   - id: medium
@@ -26,6 +27,7 @@ tasks:
     difficulty: medium
     max_steps: 30
     grader:
+      type: "reward"
       success_threshold: 0.85
 
   - id: hard
@@ -34,4 +36,5 @@ tasks:
     difficulty: hard
     max_steps: 40
     grader:
+      type: "reward"
       success_threshold: 0.85
