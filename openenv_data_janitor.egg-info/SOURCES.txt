@@ -1,6 +1,9 @@
 README.md
 __init__.py
 client.py
+grader_easy.py
+grader_hard.py
+grader_medium.py
 inference.py
 models.py
 pyproject.toml
