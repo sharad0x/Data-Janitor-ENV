@@ -29,6 +29,7 @@ SUCCESS_SCORE_THRESHOLD = 0.85
 
 # The 3 tasks the validator demands we loop through
 TASKS_TO_RUN = ["easy", "medium", "hard"]
+TASKS_TO_RUN = ["medium"]  # TEMP HACK FOR TESTING - REMOVE THIS LINE BEFORE SUBMISSION
 
 SYSTEM_PROMPT = textwrap.dedent("""
     You are an elite Autonomous Data Engineer.
@@ -43,7 +44,8 @@ SYSTEM_PROMPT = textwrap.dedent("""
     6. NEVER alter the target column.
     7. FATAL ERROR: DO NOT repeat an action on the same column. If you just applied an action to a column, YOU MUST pick a different column or a different action next.
     8. JUNK/IDs: You MUST use 'drop_column' on any high-cardinality string identifiers (like Names, IDs, or raw text) before submitting.
-    
+    9. CRITICAL ANTI-LOOPING RULE: If you see "FATAL PENALTY" in your feedback, it means you are looping. You MUST instantly change your strategy and target a different column. Do not touch that column again.
+       
     You must output EXACTLY ONE JSON object matching one of these structures. Output raw JSON only. Do not include markdown formatting or ```json blocks:
     {"command": {"action_type": "drop_column", "column_name": "..."}}
     {"command": {"action_type": "fill_missing", "column_name": "...", "strategy": "median", "constant_value": "..."}} 
@@ -102,7 +104,7 @@ async def main() -> None:
     elif IMAGE_NAME:
         env = await DataJanitorEnv.from_docker_image(IMAGE_NAME)
     else:
-        env = DataJanitorEnv(base_url="[http://127.0.0.1:8000](http://127.0.0.1:8000)")
+        env = DataJanitorEnv(base_url="http://127.0.0.1:8000")
 
     for current_task in TASKS_TO_RUN:
         rewards: List[float] = []

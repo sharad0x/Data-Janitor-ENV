@@ -41,6 +41,7 @@ class DataJanitorEnvironment(Environment):
         self.last_feedback = "Initialized."
         self.final_score = 0.0
         self.cleaned_columns = set()
+        self.applied_actions = set()
         
         # Placeholders for data
         self.train_df = None
@@ -92,6 +93,7 @@ class DataJanitorEnvironment(Environment):
         self.action_history = []
         self.final_score = 0.0
         self.cleaned_columns = set()
+        self.applied_actions = set()
         self.last_feedback = f"Loaded {self.difficulty.upper()} task. Train/Test split initialized."
 
         # 5. Return standard observation
@@ -117,10 +119,26 @@ class DataJanitorEnvironment(Environment):
         self.action_history = self.action_history[-5:]
         
         # ==========================================
-        # REWARD SHAPING (Requirement #4)
+        # REWARD SHAPING
         # ==========================================
         step_reward = -0.01 # Constant step penalty to encourage efficiency
         is_manual_submit = False
+
+        # ==========================================
+        # ANTI-LOOPING SHIELD
+        # ==========================================
+        col_name = getattr(cmd, 'column_name', None)
+        if col_name and cmd.action_type not in ["submit", "drop_column"]:
+            action_sig = f"{cmd.action_type}_{col_name}"
+            if action_sig in self.applied_actions:
+                # The agent is trying to farm points. Punish it and abort the step.
+                self.last_feedback = f"FATAL PENALTY: You already applied {cmd.action_type} to '{col_name}'. DO NOT REPEAT ACTIONS ON THE SAME COLUMN."
+                step_reward -= 0.50 
+                
+                # Return immediately so it doesn't get the positive reward from the try block
+                return self._generate_observation(float(step_reward), done)
+            else:
+                self.applied_actions.add(action_sig)
         
         try:
             if isinstance(cmd, SubmitDatasetAction):
@@ -253,23 +271,18 @@ class DataJanitorEnvironment(Environment):
         return self._generate_observation(total_reward, done)
 
     def _evaluate_final_pipeline(self) -> float:
-        """Standardized ML Grader for Easy, Medium, and Hard tasks."""
+        """Dual-Model Grader for Easy, Medium, and Hard tasks."""
         if self.target_column not in self.train_df.columns:
             return 0.0
         
-        # Check if agent fulfilled the Task objective
-        # Easy: Date conversion, Medium: No NaNs, Hard: Performance
         try:
-            from sklearn.ensemble import RandomForestClassifier
-            from sklearn.metrics import f1_score
-            
             y_train = self.train_df[self.target_column]
             X_train = self.train_df.drop(columns=[self.target_column])
             y_test = self.test_df[self.target_column]
             X_test = self.test_df.drop(columns=[self.target_column])
             X_test = X_test.reindex(columns=X_train.columns, fill_value=0)
 
-            # Strict check for remaining NaNs (Requirement #3)
+            # Strict check for remaining NaNs
             if X_train.isna().sum().sum() > 0:
                 self.last_feedback = "Evaluation Failed: Dataset contains NaNs."
                 return 0.0
@@ -281,13 +294,72 @@ class DataJanitorEnvironment(Environment):
                 X_train[col] = le.fit_transform(X_train[col].astype(str))
                 X_test[col] = le.transform(X_test[col].astype(str))
 
-            model = RandomForestClassifier(n_estimators=30, random_state=42, n_jobs=-1)
-            model.fit(X_train, y_train)
-            preds = model.predict(X_test)
-            
-            score = f1_score(y_test, preds, average='macro')
-            self.last_feedback = f"Evaluation Complete. Score: {score:.3f}"
-            return float(score)
+            # ==========================================
+            # DYNAMIC DUAL-MODEL GRADER
+            # ==========================================
+            is_regression = False
+            if pd.api.types.is_float_dtype(y_train):
+                is_regression = True
+            elif pd.api.types.is_numeric_dtype(y_train) and y_train.nunique() > 20:
+                is_regression = True
+
+            if is_regression:
+                from sklearn.ensemble import RandomForestRegressor
+                from sklearn.linear_model import Ridge
+                from sklearn.metrics import r2_score
+                
+                # Model 1: Tree-Based (Robust baseline)
+                rf = RandomForestRegressor(n_estimators=30, random_state=42, n_jobs=-1)
+                rf.fit(X_train, y_train)
+                rf_score = max(0.0, r2_score(y_test, rf.predict(X_test)))
+                
+                # Model 2: Linear-Based (Sensitive to scaling & outliers)
+                try:
+                    ridge = Ridge(random_state=42)
+                    ridge.fit(X_train, y_train)
+                    linear_score = max(0.0, r2_score(y_test, ridge.predict(X_test)))
+                except Exception:
+                    linear_score = 0.0
+                
+                final_score = (rf_score + linear_score) / 2.0
+                self.last_feedback = f"Eval Complete (Regression). RF R²: {rf_score:.3f} | Ridge R²: {linear_score:.3f} | Final: {final_score:.3f}"
+                return float(final_score)
+                
+            else:
+                from sklearn.ensemble import RandomForestClassifier
+                from sklearn.linear_model import LogisticRegression
+                from sklearn.metrics import f1_score
+                from sklearn.preprocessing import LabelEncoder
+                import warnings
+                from sklearn.exceptions import ConvergenceWarning
+                
+                target_le = LabelEncoder()
+                y_train_enc = target_le.fit_transform(y_train.astype(str))
+                try:
+                    y_test_enc = target_le.transform(y_test.astype(str))
+                except ValueError:
+                    most_frequent = y_train_enc.mode()[0] if hasattr(y_train_enc, 'mode') else 0
+                    y_test_enc = [target_le.transform([str(x)])[0] if str(x) in target_le.classes_ else most_frequent for x in y_test]
+                
+                # Model 1: Tree-Based (Robust baseline)
+                rf = RandomForestClassifier(n_estimators=30, random_state=42, n_jobs=-1)
+                rf.fit(X_train, y_train_enc)
+                rf_score = f1_score(y_test_enc, rf.predict(X_test), average='macro')
+                
+                # Model 2: Linear-Based (Sensitive to scaling & outliers)
+                try:
+                    with warnings.catch_warnings():
+                        warnings.simplefilter("ignore", category=ConvergenceWarning)
+                        lr = LogisticRegression(max_iter=200, random_state=42)
+                        lr.fit(X_train, y_train_enc)
+                        linear_score = f1_score(y_test_enc, lr.predict(X_test), average='macro')
+                except Exception:
+                    linear_score = 0.0
+                
+                final_score = (rf_score + linear_score) / 2.0
+                self.last_feedback = f"Eval Complete (Class). RF F1: {rf_score:.3f} | LogReg F1: {linear_score:.3f} | Final: {final_score:.3f}"
+                return float(final_score)
+
         except Exception:
             return 0.0
 
