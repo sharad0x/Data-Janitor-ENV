@@ -1,6 +1,6 @@
 def grade(trajectory, **kwargs) -> float:
     """
-    OpenEnv programmatic grader for Data Janitor - EASY task.
+    OpenEnv programmatic grader for Data Janitor.
     Extracts the final_score from the final observation in the trajectory.
     """
     if not trajectory:
@@ -25,7 +25,8 @@ def grade(trajectory, **kwargs) -> float:
         if hasattr(last_step, "reward"):
             return float(last_step.reward)
             
-    except Exception as e:
-        print(f"[Grader Error] {e}")
+    except Exception:
+        # HACKATHON FIX: Silenced print statement to comply with strict stdout constraints
+        pass
         
     return 0.0

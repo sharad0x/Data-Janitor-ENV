@@ -8,16 +8,22 @@ from typing import List, Optional
 from openai import OpenAI
 from pydantic import ValidationError
 
+from dotenv import load_dotenv
+load_dotenv()
+
 from client import DataJanitorEnv
 from models import DataJanitorAction
 
 # ==========================================
 # MANDATORY HACKATHON ENVIRONMENT VARIABLES
 # ==========================================
-API_BASE_URL = os.getenv("API_BASE_URL", "https://router.huggingface.co/v1")
-MODEL_NAME = os.getenv("MODEL_NAME", "Qwen/Qwen2.5-72B-Instruct")
+IMAGE_NAME = os.getenv("IMAGE_NAME") or os.getenv("LOCAL_IMAGE_NAME")
 API_KEY = os.getenv("HF_TOKEN") or os.getenv("API_KEY")
-IMAGE_NAME = os.getenv("LOCAL_IMAGE_NAME") or os.getenv("IMAGE_NAME")
+API_BASE_URL = os.getenv("API_BASE_URL") or "https://router.huggingface.co/v1"
+MODEL_NAME = os.getenv("MODEL_NAME") or "Qwen/Qwen2.5-72B-Instruct"
+
+# Retained to allow testing directly against the deployed Hugging Face space
+SPACE_URL = os.getenv("SPACE_URL") 
 
 # Task Config
 TASK_NAME = os.getenv("TASK_NAME", "hard")
@@ -26,7 +32,7 @@ MAX_STEPS = 40
 SUCCESS_SCORE_THRESHOLD = 0.85 
 
 # ==========================================
-# SYSTEM PROMPT (Fixed for strict JSON literals)
+# SYSTEM PROMPT
 # ==========================================
 SYSTEM_PROMPT = textwrap.dedent("""
     You are an elite Autonomous Data Engineer.
@@ -53,23 +59,23 @@ SYSTEM_PROMPT = textwrap.dedent("""
 """).strip()
 
 # ==========================================
-# STRICT LOGGING FUNCTIONS (Do Not Modify)
+# STRICT LOGGING FUNCTIONS (Exact match to reference)
 # ==========================================
 def log_start(task: str, env: str, model: str) -> None:
     print(f"[START] task={task} env={env} model={model}", flush=True)
 
 def log_step(step: int, action: str, reward: float, done: bool, error: Optional[str]) -> None:
-    error_val = error.replace('\n', ' ') if error else "null"
+    error_val = error if error else "null"
     done_val = str(done).lower()
-    action_clean = action.replace('\n', ' ').strip()
     print(
-        f"[STEP] step={step} action={action_clean} reward={reward:.2f} done={done_val} error={error_val}",
+        f"[STEP] step={step} action={action} reward={reward:.2f} done={done_val} error={error_val}",
         flush=True,
     )
 
 def log_end(success: bool, steps: int, score: float, rewards: List[float]) -> None:
     rewards_str = ",".join(f"{r:.2f}" for r in rewards)
     print(f"[END] success={str(success).lower()} steps={steps} score={score:.3f} rewards={rewards_str}", flush=True)
+
 
 # ==========================================
 # AGENT LOGIC WITH BACKOFF
@@ -86,7 +92,6 @@ def get_model_message(client: OpenAI, obs_str: str, max_retries: int = 5) -> str
                 temperature=0.2,
                 response_format={"type": "json_object"}
             )
-            # Remove markdown codeblocks if the LLM adds them despite instructions
             raw_content = (completion.choices[0].message.content or "").strip()
             if raw_content.startswith("```json"):
                 raw_content = raw_content[7:]
@@ -95,39 +100,33 @@ def get_model_message(client: OpenAI, obs_str: str, max_retries: int = 5) -> str
             return raw_content.strip()
         
         except Exception as exc:
-            # Handle rate limiting gracefully
             if "429" in str(exc) or "Too Many Requests" in str(exc):
                 wait_time = 4 * (attempt + 1)
-                print(f"[DEBUG] API Rate Limited. Retrying in {wait_time}s...", flush=True)
                 time.sleep(wait_time)
             else:
-                print(f"[DEBUG] Model request failed: {exc}", flush=True)
                 return '{"command": {"action_type": "submit", "notes": "API Error"}}'
                 
-    print("[DEBUG] Max API retries reached.", flush=True)
     return '{"command": {"action_type": "submit", "notes": "Rate limit fallback"}}'
+
 
 # ==========================================
 # MAIN EXECUTION
 # ==========================================
 async def main() -> None:
-    # Hackathon requirement: Initialize via official OpenAI client using mandatory vars
     client = OpenAI(base_url=API_BASE_URL, api_key=API_KEY)
 
-    # Allow evaluator to inject Docker container, fallback to local URL
-    if IMAGE_NAME:
-        print(f"[DEBUG] Booting environment from Docker image: {IMAGE_NAME}", flush=True)
+    if SPACE_URL:
+        env = DataJanitorEnv(base_url=SPACE_URL)
+    elif IMAGE_NAME:
         env = await DataJanitorEnv.from_docker_image(IMAGE_NAME)
     else:
-        print(f"[DEBUG] Booting environment from local URL", flush=True)
-        env = DataJanitorEnv(base_url="http://localhost:8000")
+        env = DataJanitorEnv(base_url="http://localhost:7860")
 
     rewards: List[float] = []
     steps_taken = 0
     score = 0.0
     success = False
 
-    # Mandatory START log
     log_start(task=TASK_NAME, env=BENCHMARK, model=MODEL_NAME)
 
     try:
@@ -138,21 +137,18 @@ async def main() -> None:
                 break
 
             obs_str = result.observation.model_dump_json(indent=2)
-            
-            # API Request
             agent_reply = await asyncio.to_thread(get_model_message, client, obs_str)
-            error_msg = None
             
-            # Baseline delay to prevent immediate rate limit trips
             await asyncio.sleep(2)
             
+            error_msg = None
             try:
                 action_dict = json.loads(agent_reply)
                 action = DataJanitorAction(**action_dict)
                 result = await env.step(action)
             except (json.JSONDecodeError, ValidationError) as e:
-                error_msg = f"Agent Output Error: {str(e)}"
-                print(f"[DEBUG] {error_msg}", flush=True)
+                # Sanitize error to prevent strict line-break violations in stdout
+                error_msg = f"Agent Output Error: {str(e)}".replace('\n', ' ')
                 action = DataJanitorAction(command={"action_type": "submit", "notes": "Format error fallback"})
                 result = await env.step(action)
 
@@ -162,13 +158,12 @@ async def main() -> None:
             rewards.append(reward)
             steps_taken = step
             
-            # Ensure action logs on a single line
+            # Compress action dict to a single line string to avoid newlines in stdout
             flat_action = json.dumps(action.model_dump())
             
-            # Mandatory STEP log
             log_step(step=step, action=flat_action, reward=reward, done=done, error=error_msg)
 
-        # Final Evaluation
+        # Ensure bounds mapping for final score (0.0 to 1.0)
         score = result.observation.final_score
         score = min(max(score, 0.0), 1.0)
         success = score >= SUCCESS_SCORE_THRESHOLD
@@ -176,10 +171,10 @@ async def main() -> None:
     finally:
         try:
             await env.close()
-        except Exception as e:
-            print(f"[DEBUG] env.close() error: {e}", flush=True)
+        except Exception:
+            # Explicitly silencing to prevent ANY stdout corruption per official rules
+            pass
             
-        # Mandatory END log
         log_end(success=success, steps=steps_taken, score=score, rewards=rewards)
 
 if __name__ == "__main__":

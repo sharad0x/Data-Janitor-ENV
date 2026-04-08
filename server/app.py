@@ -1,6 +1,10 @@
 import os
 import uvicorn
+from dotenv import load_dotenv
 from openenv.core.env_server.http_server import create_app
+
+# Load local environment variables safely
+load_dotenv()
 
 try:
     from ..models import DataJanitorAction, DataJanitorObservation
@@ -12,6 +16,8 @@ except ImportError:
 # Enable the built-in debugging UI
 os.environ["ENABLE_WEB_INTERFACE"] = "true"
 
+# HACKATHON FIX: Use standard OpenEnv registration. 
+# The framework will route tasks internally via the /reset payload.
 app = create_app(
     DataJanitorEnvironment,
     DataJanitorAction,
@@ -22,8 +28,11 @@ app = create_app(
 
 def main():
     """Required by OpenEnv for multi-mode deployment validation."""
-    # Pass the 'app' object directly instead of a string
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    # PORT FIX: Dynamically grab the port if the platform provides one, 
+    # otherwise default strictly to 7860 for Hugging Face Spaces.
+    port = int(os.getenv("PORT", 7860))
+    
+    uvicorn.run(app, host="0.0.0.0", port=port)
 
 if __name__ == "__main__":
     main()
