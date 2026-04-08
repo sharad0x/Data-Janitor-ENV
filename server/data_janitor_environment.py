@@ -273,7 +273,7 @@ class DataJanitorEnvironment(Environment):
     def _evaluate_final_pipeline(self) -> float:
         """Dual-Model Grader for Easy, Medium, and Hard tasks."""
         if self.target_column not in self.train_df.columns:
-            return 0.0
+            return 0.001  # FIXED: Fallback from 0.0
         
         try:
             y_train = self.train_df[self.target_column]
@@ -285,7 +285,7 @@ class DataJanitorEnvironment(Environment):
             # Strict check for remaining NaNs
             if X_train.isna().sum().sum() > 0:
                 self.last_feedback = "Evaluation Failed: Dataset contains NaNs."
-                return 0.0
+                return 0.001  # FIXED: Fallback from 0.0
 
             # Encode any remaining strings to prevent full crash
             for col in X_train.select_dtypes(exclude=[np.number]).columns:
@@ -323,7 +323,7 @@ class DataJanitorEnvironment(Environment):
                 
                 final_score = (rf_score + linear_score) / 2.0
                 self.last_feedback = f"Eval Complete (Regression). RF R²: {rf_score:.3f} | Ridge R²: {linear_score:.3f} | Final: {final_score:.3f}"
-                return float(final_score)
+                return float(np.clip(final_score, 0.001, 0.999))
                 
             else:
                 from sklearn.ensemble import RandomForestClassifier
@@ -358,10 +358,12 @@ class DataJanitorEnvironment(Environment):
                 
                 final_score = (rf_score + linear_score) / 2.0
                 self.last_feedback = f"Eval Complete (Class). RF F1: {rf_score:.3f} | LogReg F1: {linear_score:.3f} | Final: {final_score:.3f}"
-                return float(final_score)
+                
+                # Added the clip wrapper here for the classification task!
+                return float(np.clip(final_score, 0.001, 0.999))
 
         except Exception:
-            return 0.0
+            return 0.001 
 
     def _generate_observation(self, reward: float, done: bool) -> DataJanitorObservation:
         """Generates raw mathematical state using only Train data statistics."""
