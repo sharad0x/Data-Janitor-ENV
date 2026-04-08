@@ -3,7 +3,7 @@ name: data_janitor
 type: space
 runtime: fastapi
 app: server.app:app
-port: 7860
+port: 8000
 
 env_metadata:
   name: "data-janitor-env"

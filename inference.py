@@ -120,7 +120,7 @@ async def main() -> None:
     elif IMAGE_NAME:
         env = await DataJanitorEnv.from_docker_image(IMAGE_NAME)
     else:
-        env = DataJanitorEnv(base_url="http://localhost:7860")
+        env = DataJanitorEnv(base_url="http://localhost:8000")
 
     rewards: List[float] = []
     steps_taken = 0

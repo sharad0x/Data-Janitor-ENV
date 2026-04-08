@@ -43,4 +43,4 @@ ENV PYTHONPATH="/app"
 
 # 11. Start the server
 # (Custom HEALTHCHECK removed because Hugging Face handles port monitoring natively)
-CMD ["uvicorn", "server.app:app", "--host", "0.0.0.0", "--port", "7860"]
+CMD ["uvicorn", "server.app:app", "--host", "0.0.0.0", "--port", "8000"]
