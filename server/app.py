@@ -34,13 +34,6 @@ def health_check():
     return {"status": "ok"}
 
 def main():
-    port = int(os.getenv("PORT", 7860))
-    uvicorn.run(app, host="0.0.0.0", port=port)
-
-if __name__ == "__main__":
-    main()
-
-def main():
     """Required by OpenEnv for multi-mode deployment validation."""
     # PORT FIX: Dynamically grab the port if the platform provides one, 
     # otherwise default strictly to 7860 for Hugging Face Spaces.

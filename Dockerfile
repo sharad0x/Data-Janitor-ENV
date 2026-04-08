@@ -41,9 +41,6 @@ COPY --from=builder /app /app
 ENV PATH="/app/.venv/bin:$PATH"
 ENV PYTHONPATH="/app"
 
-# 11. Health check
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD curl -f http://127.0.0.1:7860/health || exit 1
-
-# 12. Start the server
+# 11. Start the server
+# (Custom HEALTHCHECK removed because Hugging Face handles port monitoring natively)
 CMD ["uvicorn", "server.app:app", "--host", "0.0.0.0", "--port", "7860"]
