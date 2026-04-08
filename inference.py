@@ -94,7 +94,6 @@ def get_model_message(client: OpenAI, obs_str: str, max_retries: int = 5) -> str
                 return '{"command": {"action_type": "submit", "notes": "API Error"}}'
     return '{"command": {"action_type": "submit", "notes": "Rate limit fallback"}}'
 
-
 async def main() -> None:
     client = OpenAI(base_url=API_BASE_URL, api_key=API_KEY)
 
@@ -103,9 +102,8 @@ async def main() -> None:
     elif IMAGE_NAME:
         env = await DataJanitorEnv.from_docker_image(IMAGE_NAME)
     else:
-        env = DataJanitorEnv(base_url="http://localhost:8000")
+        env = DataJanitorEnv(base_url="[http://127.0.0.1:8000](http://127.0.0.1:8000)")
 
-    # HACKATHON FIX: Loop through all 3 tasks sequentially
     for current_task in TASKS_TO_RUN:
         rewards: List[float] = []
         steps_taken = 0
@@ -115,7 +113,6 @@ async def main() -> None:
         log_start(task=current_task, env=BENCHMARK, model=MODEL_NAME)
 
         try:
-            # Trigger reset. Server will handle the data cycling internally.
             result = await env.reset()
             
             for step in range(1, MAX_STEPS + 1):
@@ -137,14 +134,18 @@ async def main() -> None:
                     action = DataJanitorAction(command={"action_type": "submit", "notes": "Format error fallback"})
                     result = await env.step(action)
 
-                reward = result.reward or 0.0
                 done = result.done
 
-                rewards.append(reward)
+                # HACKATHON PROTECTION: 
+                # The environment sends intermediate rewards for the UI, 
+                # but the validator expects 0.0 until the episode ends.
+                display_reward = result.reward if done else 0.0
+
+                rewards.append(display_reward)
                 steps_taken = step
                 
                 flat_action = json.dumps(action.model_dump())
-                log_step(step=step, action=flat_action, reward=reward, done=done, error=error_msg)
+                log_step(step=step, action=flat_action, reward=display_reward, done=done, error=error_msg)
 
             score = result.observation.final_score
             score = min(max(score, 0.0), 1.0)

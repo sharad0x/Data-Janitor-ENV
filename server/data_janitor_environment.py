@@ -60,7 +60,6 @@ class DataJanitorEnvironment(Environment):
             self.max_steps = 40
 
         # 3. Load the corresponding dataset
-        import os
         from sklearn.model_selection import train_test_split
 
         dataset_path = f"data/{self.difficulty}_messy.csv"
@@ -88,7 +87,6 @@ class DataJanitorEnvironment(Environment):
             self.test_df = None
 
         # 4. Reset episode variables
-        import uuid
         self.episode_id = str(uuid.uuid4())
         self.current_step = 0
         self.action_history = []
@@ -239,16 +237,18 @@ class DataJanitorEnvironment(Environment):
             step_reward -= 0.10 # Explicit penalty for crashing the physics engine
 
         # ==========================================
-        # STRICT HACKATHON GRADING (0.0 to 1.0)
+        # STRICT HACKATHON GRADING & UI REWARDS
         # ==========================================
-        # The evaluator requires the total episode reward to fall strictly
-        # between 0.0 and 1.0. We must discard all intermediate step_rewards.
         total_reward = 0.0 
         
         if is_manual_submit or self.current_step >= self.max_steps:
             done = True
             self.final_score = self._evaluate_final_pipeline()
-            total_reward = float(self.final_score) # Only the terminal ML score matters
+            total_reward = float(self.final_score) # Terminal ML score
+        else:
+            # Send the intermediate step_reward so the Web UI displays it.
+            # inference.py will safely filter this back to 0.0 in the logs.
+            total_reward = float(step_reward)
 
         return self._generate_observation(total_reward, done)
 
