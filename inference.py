@@ -22,18 +22,14 @@ API_KEY = os.getenv("HF_TOKEN") or os.getenv("API_KEY")
 API_BASE_URL = os.getenv("API_BASE_URL") or "https://router.huggingface.co/v1"
 MODEL_NAME = os.getenv("MODEL_NAME") or "Qwen/Qwen2.5-72B-Instruct"
 
-# Retained to allow testing directly against the deployed Hugging Face space
 SPACE_URL = os.getenv("SPACE_URL") 
-
-# Task Config
-TASK_NAME = os.getenv("TASK_NAME", "hard")
 BENCHMARK = os.getenv("BENCHMARK", "data_janitor")
 MAX_STEPS = 40
 SUCCESS_SCORE_THRESHOLD = 0.85 
 
-# ==========================================
-# SYSTEM PROMPT
-# ==========================================
+# The 3 tasks the validator demands we loop through
+TASKS_TO_RUN = ["easy", "medium", "hard"]
+
 SYSTEM_PROMPT = textwrap.dedent("""
     You are an elite Autonomous Data Engineer.
     Goal: Transform messy datasets into ML-Ready pipelines to maximize the final ML score (0.0 to 1.0).
@@ -58,9 +54,6 @@ SYSTEM_PROMPT = textwrap.dedent("""
     {"command": {"action_type": "submit", "notes": "..."}}
 """).strip()
 
-# ==========================================
-# STRICT LOGGING FUNCTIONS (Exact match to reference)
-# ==========================================
 def log_start(task: str, env: str, model: str) -> None:
     print(f"[START] task={task} env={env} model={model}", flush=True)
 
@@ -76,10 +69,6 @@ def log_end(success: bool, steps: int, score: float, rewards: List[float]) -> No
     rewards_str = ",".join(f"{r:.2f}" for r in rewards)
     print(f"[END] success={str(success).lower()} steps={steps} score={score:.3f} rewards={rewards_str}", flush=True)
 
-
-# ==========================================
-# AGENT LOGIC WITH BACKOFF
-# ==========================================
 def get_model_message(client: OpenAI, obs_str: str, max_retries: int = 5) -> str:
     for attempt in range(max_retries):
         try:
@@ -98,20 +87,14 @@ def get_model_message(client: OpenAI, obs_str: str, max_retries: int = 5) -> str
             if raw_content.endswith("```"):
                 raw_content = raw_content[:-3]
             return raw_content.strip()
-        
         except Exception as exc:
             if "429" in str(exc) or "Too Many Requests" in str(exc):
-                wait_time = 4 * (attempt + 1)
-                time.sleep(wait_time)
+                time.sleep(4 * (attempt + 1))
             else:
                 return '{"command": {"action_type": "submit", "notes": "API Error"}}'
-                
     return '{"command": {"action_type": "submit", "notes": "Rate limit fallback"}}'
 
 
-# ==========================================
-# MAIN EXECUTION
-# ==========================================
 async def main() -> None:
     client = OpenAI(base_url=API_BASE_URL, api_key=API_KEY)
 
@@ -122,60 +105,60 @@ async def main() -> None:
     else:
         env = DataJanitorEnv(base_url="http://localhost:8000")
 
-    rewards: List[float] = []
-    steps_taken = 0
-    score = 0.0
-    success = False
+    # HACKATHON FIX: Loop through all 3 tasks sequentially
+    for current_task in TASKS_TO_RUN:
+        rewards: List[float] = []
+        steps_taken = 0
+        score = 0.0
+        success = False
 
-    log_start(task=TASK_NAME, env=BENCHMARK, model=MODEL_NAME)
+        log_start(task=current_task, env=BENCHMARK, model=MODEL_NAME)
 
-    try:
-        result = await env.reset()
-        
-        for step in range(1, MAX_STEPS + 1):
-            if result.done:
-                break
-
-            obs_str = result.observation.model_dump_json(indent=2)
-            agent_reply = await asyncio.to_thread(get_model_message, client, obs_str)
-            
-            await asyncio.sleep(2)
-            
-            error_msg = None
-            try:
-                action_dict = json.loads(agent_reply)
-                action = DataJanitorAction(**action_dict)
-                result = await env.step(action)
-            except (json.JSONDecodeError, ValidationError) as e:
-                # Sanitize error to prevent strict line-break violations in stdout
-                error_msg = f"Agent Output Error: {str(e)}".replace('\n', ' ')
-                action = DataJanitorAction(command={"action_type": "submit", "notes": "Format error fallback"})
-                result = await env.step(action)
-
-            reward = result.reward or 0.0
-            done = result.done
-
-            rewards.append(reward)
-            steps_taken = step
-            
-            # Compress action dict to a single line string to avoid newlines in stdout
-            flat_action = json.dumps(action.model_dump())
-            
-            log_step(step=step, action=flat_action, reward=reward, done=done, error=error_msg)
-
-        # Ensure bounds mapping for final score (0.0 to 1.0)
-        score = result.observation.final_score
-        score = min(max(score, 0.0), 1.0)
-        success = score >= SUCCESS_SCORE_THRESHOLD
-
-    finally:
         try:
-            await env.close()
-        except Exception:
-            # Explicitly silencing to prevent ANY stdout corruption per official rules
-            pass
+            # Trigger reset. Server will handle the data cycling internally.
+            result = await env.reset()
             
-        log_end(success=success, steps=steps_taken, score=score, rewards=rewards)
+            for step in range(1, MAX_STEPS + 1):
+                if result.done:
+                    break
+
+                obs_str = result.observation.model_dump_json(indent=2)
+                agent_reply = await asyncio.to_thread(get_model_message, client, obs_str)
+                
+                await asyncio.sleep(2)
+                
+                error_msg = None
+                try:
+                    action_dict = json.loads(agent_reply)
+                    action = DataJanitorAction(**action_dict)
+                    result = await env.step(action)
+                except (json.JSONDecodeError, ValidationError) as e:
+                    error_msg = f"Agent Output Error: {str(e)}".replace('\n', ' ')
+                    action = DataJanitorAction(command={"action_type": "submit", "notes": "Format error fallback"})
+                    result = await env.step(action)
+
+                reward = result.reward or 0.0
+                done = result.done
+
+                rewards.append(reward)
+                steps_taken = step
+                
+                flat_action = json.dumps(action.model_dump())
+                log_step(step=step, action=flat_action, reward=reward, done=done, error=error_msg)
+
+            score = result.observation.final_score
+            score = min(max(score, 0.0), 1.0)
+            success = score >= SUCCESS_SCORE_THRESHOLD
+
+        finally:
+            # DO NOT close env here! Just log the end of the current task.
+            log_end(success=success, steps=steps_taken, score=score, rewards=rewards)
+
+    # Close env only after all 3 tasks are complete
+    try:
+        await env.close()
+    except Exception:
+        pass
 
 if __name__ == "__main__":
     asyncio.run(main())
