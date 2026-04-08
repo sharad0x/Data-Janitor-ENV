@@ -29,7 +29,6 @@ SUCCESS_SCORE_THRESHOLD = 0.85
 
 # The 3 tasks the validator demands we loop through
 TASKS_TO_RUN = ["easy", "medium", "hard"]
-TASKS_TO_RUN = ["medium"]  # TEMP HACK FOR TESTING - REMOVE THIS LINE BEFORE SUBMISSION
 
 SYSTEM_PROMPT = textwrap.dedent("""
     You are an elite Autonomous Data Engineer.
