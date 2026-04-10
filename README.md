@@ -167,9 +167,9 @@ Or using standard pip: pip install -r requirements.txt
 **2. Configure Environment Variables**
 Create a .env file in the root directory (alongside inference.py) with your credentials:
 ```
-# Your AI Provider API key (Hugging Face, NVIDIA NIM, etc.)
+# Your AI Provider API key (Hugging Face, NVIDIA NIM, etc.). This example uses NVIDIA NIM
 API_KEY=your_api_key_here
-API_BASE_URL=[https://integrate.api.nvidia.com/v1](https://integrate.api.nvidia.com/v1)
+API_BASE_URL=https://integrate.api.nvidia.com/v1
 MODEL_NAME=meta/llama-3.1-70b-instruct
 
 # Direct URL to your deployed Hugging Face Space
